@@ -1,4 +1,4 @@
-# QCA theory MVP: test specification v1
+# QCA theory MVP: test specification v2
 
 27 September 2026. Companion to: `defect_conditioned_code_selection_v1511.pdf` (v15), `acid_prophunt_hal_standing_connections_v1_annotated_review1.pdf`, `working_context_v4.1_addendum.md`, and the "Update Context" MVP note.
 
@@ -56,43 +56,69 @@ Verification marks: [V] confirmed against the paper body in the 27 Sep session; 
 
 ---
 
-## T1. Joint automorphism group and orbit census (BB family)
+## T1. Joint Automorphism Group and Orbit Census (BB family)
 
-**Question.** How many inequivalent single-coupler and single-qubit dropouts does each (BB code, connectivity) pair have?
+**Question.** Which single-coupler and single-qubit dropouts form equivalence classes under symmetries of the specified experiment, and how much compilation and simulation overhead can those symmetries eliminate?
 
-**Gates.** The heat-map compute budget. It also decides whether a heat map on a given instance carries more than a handful of independent numbers, which is the MVP's largest scientific risk.
+**Gates.** The heat-map compute budget, eligibility for circuit transport in T2, and the potential resolution of single-defect logical-sensitivity weights. A small orbit count may limit this resolution, but it does not necessarily invalidate layout optimization.
 
 **Inputs.**
 - BB codes [[72,12,6]], [[90,8,10]], [[108,8,10]], [[144,12,12]], [[288,12,18]] from Bravyi et al., arXiv:2308.07915. Take (ℓ, m, A, B) from that paper's table, not from this document.
 - The ACID repo's two BB instances, per the naming trap above.
-- Connectivities: degree-5 (Shaw–Terhal morphing) and degree-6 "hexagonal". Where the repo only builds some combinations, build the rest analogously and flag them as agent-built.
+- The degree-5 (Shaw–Terhal morphing) and degree-6 "hexagonal" connectivity variants.
+Obtain code parameters from the cited source and confirm them against the repo instances using the shared naming and graph-construction checks. Mark combinations constructed outside the repository as agent-built and validate their construction before drawing symmetry conclusions.
+
+**Experiment Pre-Checklist/Contract: Before Computing Performance Equivalences, Record the Following**
+- Specify the hardware connections and the code (record-keeping stuff): The physical connectivity graph, stabilizer generators/stabilizer groups, chosen measured checks, and any qubit roles or gate restrictions.
+
+- Specify what logical information we store and what counts as failure: Logical preparation, measured logical observables, and the exact encoded test failure event (individual logical error, basis-specific block failure, or another explicitly defined event).
+
+- Specify how long we run and where errors occur: Memory duration, initialization & closing procedures, and the noise on each operation type. Return how many rounds R are performed.
+
+- Specify how circuits and corrections are chosen: Compilation and schedule-selection policy, decoder settings, and permitted transformations of syndrome and logical labels.
+
+- Specify the measured quantity plotted in the heat map: The fixed defect-free reference and heat map statistics. If you report the per-round LER, record its conversion from block failure and apply it consistently throughout the procedure.
+
+**See if this statement holds for our experiment (Not to prove generally):** BB-288's arc-transitivity may arise from additional automorphisms, beyond translations, permitted by its 12x12 periodic structure but would be absent in BB-144’s 12x6 structure. Test whether these transformations exchange connection types that remain inequivalent in BB-144. Show the specific automorphisms that combine the translation-defined edge classes. Then, verify that they also connect all directed-edge classes. You should NOT infer arc-transitivity from the torus dimensions alone, but rather through explicit verification.
 
 **Procedure.**
-1. Build the global connectivity graph G and the stabiliser list with X/Z types.
-2. Compute three groups using nauty/pynauty or bliss:
-   - **(a)** Aut(G) as an undirected graph.
-   - **(b)** The joint group preserving G and mapping X-stabiliser supports to X-stabiliser supports and Z to Z.
-   - **(c)** Group (b) extended to allow a global X↔Z exchange.
+1. Build the global connectivity graph G and the stabiliser list with X/Z types. (Keep these distinct from a data-check Tanner graph unless they are explicitly the same graph in the experiment)
+2. Compute three groups using nauty/pynauty or bliss (or an equivalent tool):
+   - **(a)** The Graph Group: Aut(G) as the group of vertex permutations that preserve adjacency. This group should ignore which stabilizers we measure. A rotation could preserve the hardware connections while sending a check’s support to a set of qubits on which no chosen check exists.
+   - **(b)** Typed-Check Group: The joint automorphism group that preserves G AND the chosen checklist, mapping X-stabiliser supports to X-stabiliser supports and Z to Z. That is, for an element of the group (b), a transformed X operator must be another check in the chosen X-check list. The analogous requirement holds for every Z-check. Individual checks may move or exchange labels; their types must remain the same.
+   - **(c)** Global-exchange extension: Group b (Typed-Check Group), together with all valid transformations that allow a global XZ (and ZX) exchange. This must include a corresponding Pauli-basis transformation since a qubit permutation alone should not exchange X and Z. “Global” means that every X-check becomes a Z-check and every Z-check becomes an X-check. We are not allowing arbitrary partial exchanges.
 
-   Use a vertex-coloured auxiliary graph: qubit nodes, stabiliser nodes coloured by type and joined to their support, and one subdivision node per coupler. Coupler orbits are the orbits of the subdivision nodes.
-3. For each group report:
+  For (b), use a vertex-coloured auxiliary graph with separate colours for qubits, X-checks, Z-checks, and coupler subdivision nodes. Include required role labels. Coupler orbits are the orbits of subdivision nodes. For (c), explicitly test a globally type-swapped copy and, if an isomorphism exists, adjoin a verified exchange transformation. Do not obtain (c) merely by removing the X/Z colours: that can admit partial exchanges. Report orders of the induced physical transformations, excluding auxiliary-node permutations that act trivially on the physical system.
+
+3. State what the checklist calculation captures. A symmetry can preserve the stabilizer group while mapping a listed generator to a product of generators, so group (b) may miss some code symmetries. When testing additional candidates, use the binary symplectic algebra (specified in the code's parameters) with phase tracking to verify that the transformed stabilizers generate the same group, including Pauli signs. You can only claim to have found all stabilizer-group automorphisms if completeness has been established (don't simply assume). These additional symmetries permit circuit reuse iff they also preserve or consistently transform the actual check-measurement protocol.
+
+4. Identify a verified experiment-preserving subgroup $\Gamma_{\mathrm{exp}}$ of the candidates. Check the action on preparation, logical observables, failure event, noise, circuit conventions, and decoder. Note: an exchange relating X-memory and Z-memory is a relation between two experiments unless the defined metric and noise make it a symmetry of one experiment. Uniform gate-error rates alone do not establish experiment invariance. 
+
+  To account for this, use an explicitly equivariant schedule policy (i.e., a scheduling whose compilation by nature respects relabeling). Transforming the defect and then compiling should produce the transformed version of the original circuit, including any required basis changes. Symmetry-based reuse requires both a consistent transformation of the experiment and a consistent choice of circuits. Independent finite-time solves are NOT assumed to be equivariant.
+
+5. For each group ((a),(b),(c)) report:
    - the group order;
    - the number and sizes of qubit orbits;
    - the number and sizes of coupler orbits;
    - the number of orbits of unordered coupler pairs and of unordered qubit pairs (for 2-dropout sampling).
-4. **Sanity check:** the translations Z_ℓ × Z_m act on every instance, so |(b)| ≥ ℓm.
-5. **Validation against ACID §5** [V]:
+
+6. **Sanity check:** Check expected translations by explicitly checking the maps on the graph and typed checks. Where a faithful Z_ℓ × Z_m translation subgroup survives, we have that |(b)| ≥ ℓm. If it fails, search the construction or connectivity constraints for errors rather than imposing the bound unconditionally. Treat the original specification's BB-288 hex arc-transitivity and BB-144 hex multiple-edge-orbit statements (below) as reproduction targets to verify against the precise instances. Test directed- and undirected-edge transitivity separately.
+**Validation against ACID §5** [V]:
    - BB-288 hex should be arc-transitive under (a).
    - BB-144 hex should have at least 2 edge orbits.
    - If (a) is arc-transitive but (b) is not, report it prominently. The group that licenses "same experiment" under uniform noise is (b), or (c) with the X/Z memory bases swapped.
 
-**Hypothesis to test, not assert.** BB-288's arc-transitivity comes from automorphisms beyond translations that exist on the 12×12 torus but not the 12×6 torus. Report which group elements merge edge classes.
+7. Identify transformations that merge translation classes. Keep the proposed explanation involving the 12×12 versus 12×6 torus as a hypothesis until explicit maps establish it. Report prominently when graph symmetries fail type-check or experiment-level checks.
 
-**Output.** One table row per instance: group orders for (a), (b), (c); qubit orbits; coupler orbits; pair orbits.
+**Interpretation** For a truly invariant experiment and its performance statistic: $h(\sigma e)=h(e)$. Therefore, #{distinct heat-map values} $\leq|E/\Gamma_{exp}$
 
-**Decision rule.** Under uniform noise, the single-coupler heat map has exactly #coupler-orbits(b) independent values. If that number is 3 or fewer for the MVP instance, mark it "heat map nearly degenerate". The MVP then needs the T7 testbed or an explicit written justification.
+Generally, invariant functions have one free parameter per orbit, but values assigned to different orbits can coincide. An individual noisy estimate need not be constant within an orbit. Only if a verified subgroup is available does its orbits give a valid but potentially conservative reduction. (In simpler words, different symmetry classes can still happen to receive the same value; noisy data may temporarily violate the symmetry; and if you only trust some of the symmetries, you can still reduce the problem safely, just not as aggressively as if you knew the full symmetry group.)
 
-**Cost.** Minutes.
+**Output** Group/orbit tables; representative-to-member maps; the experiment pre-checklist; verified and rejected symmetry checks; completeness limitations; and projected compilation and simulation savings. Record runtime.
+
+**Decision Rules** Permit representative-based reuse only for symmetries that pass T2 under the recorded experiment contract; uniform noise alone is a baseline and is insufficient to establish equivalence. Under these verified symmetries, the single-coupler heat map has one potentially independent value per coupler orbit, although different orbits may have equal values. 
+If the MVP instance has three or fewer verified coupler orbits, flag “limited single-coupler weighting resolution” rather than declaring the heat map nearly uniform or uninformative: even two classes can provide useful layout guidance if their dropout penalties differ substantially. 
+Use T3 to assess whether between-orbit differences are large enough, relative to their uncertainty, to support meaningful weighting. If they are not, use the T7 testbed or explicitly justify proceeding with another source of layout improvement. A uniform single-defect penalty limits the benefit of distinguishing couplers by isolated-dropout importance, but layouts can still differ through total defect exposure, operating noise, and multiple-defect effects.
 
 ---
 
