@@ -1,4 +1,4 @@
-# QCA theory MVP: test specification v2
+# QCA theory MVP: test specification v2.2
 
 27 September 2026. Companion to: `defect_conditioned_code_selection_v1511.pdf` (v15), `acid_prophunt_hal_standing_connections_v1_annotated_review1.pdf`, `working_context_v4.1_addendum.md`, and the "Update Context" MVP note.
 
@@ -121,30 +121,243 @@ If the MVP instance has three or fewer verified coupler orbits, flag “limited 
 Use T3 to assess whether between-orbit differences are large enough, relative to their uncertainty, to support meaningful weighting. If they are not, use the T7 testbed or explicitly justify proceeding with another source of layout improvement. A uniform single-defect penalty limits the benefit of distinguishing couplers by isolated-dropout importance, but layouts can still differ through total defect exposure, operating noise, and multiple-defect effects.
 
 ---
+##T2. Relabeling equivalence
 
-## T2. Relabeling equivalence
+**Question**: Given a verified symmetry $\sigma \in \Gamma_{\mathrm{exp}}$ from T1 that maps a dropped coupler $e$ to $e'=\sigma(e)$, can an ACID circuit compiled for ${e}$ be transported by qubit relabeling to ${e'}$ without changing the defined memory experiment or its logical error rate?
 
-**Question.** Is ACID's circuit for dropout {e} interchangeable, by qubit relabeling, with a circuit for {σ(e)} when σ is in group (b)?
+**Gates**: Whether one compilation per coupler orbit per solver seed is sufficient to generate the circuits used for the single-dropout heat map.
 
-**Procedure.**
-1. Pick e and σ from T1 with σ(e) = e′ ≠ e.
-2. Solve ACID for {e} with a fixed seed.
-3. Apply σ to the emitted Stim circuit.
-4. Build the relabeled circuit's detector error model. It must compile without non-deterministic detector errors.
-5. Confirm the observables still span the logical space.
-6. Simulate the original and the relabeled circuit under uniform noise.
-7. Separately, solve {e′} from scratch with the same seed and simulate it.
+**Important distinction**: Two different claims must be tested separately:
 
-**Output.** LER(e), LER(σ·circuit_e), LER(solve e′), each with CIs.
+Circuit transport equivalence: A circuit compiled for $e$ remains valid when transformed by $\sigma$ to the dropout location $e'$, including the corresponding transformations of detectors, logical observables, and measurement conventions.
 
-**Decision rule.**
-- If LER(σ·circuit_e) agrees with LER(e) within CIs, one solve per orbit per seed is sufficient.
-- This also holds under layout-dependent noise, because ACID does not see the layout: relabel, then simulate each relabeled circuit under its own per-edge noise.
-- Differences between LER(e) and LER(solve e′) are solver variance by construction. Pass them to T3.
+Independent compilation equivalence: Running ACID independently on $e$ and $e'$ produces circuits with equivalent logical performance.
 
----
+The first claim follows from a properly verified symmetry and consistent circuit transport. The second does not follow automatically, since ACID's finite-time optimization may select different schedules even for symmetry-related dropouts. We want to explore this difference within our project.
 
-## T3. Solver-variance decomposition (BB and surface code)
+**Inputs**:
+
+1. The global connectivity graph, typed stabilizers, and experiment contract from T1.
+
+2. The experiment-preserving subgroup $\Gamma_{\mathrm{exp}}$, including explicit vertex permutations.
+
+3. The ACID compilation settings and uniform reproduction noise model defined in Section 0.
+
+4. The memory duration $R$, decoder configuration, and precise logical failure event.
+
+**Procedure**:
+
+1. Select one representative coupler $e$ from each nontrivial coupler orbit of $\Gamma_{\mathrm{exp}}$. For each representative, choose a verified transformation $\sigma$ such that $\sigma(e)=e'\ne e$. Record both the permutation and the orbit mapping.
+
+2. Compile an ACID circuit $C_e$ for dropout ${e}$ using a fixed solver seed and time limit. Save the complete Stim circuit, the selected contraction schedule, and solver metadata.
+
+3. Construct the transported circuit $\sigma(C_e)$ by applying the physical-qubit permutation to every operation. Transform any other labels or operations required by the experiment contract, including logical-observable conventions and Pauli-basis changes if applicable.
+
+4. Verify structural validity.
+
+5. Every two-qubit operation must act on an available coupler after the dropout has been transformed.
+
+6. The transformed circuit must preserve the intended stabilizer-measurement protocol.
+
+7. Its Stim detector error model must compile without unexpected nondeterministic detectors.
+
+8. The logical observables must remain a complete and independent representation of the intended logical information.
+
+9. Detector and observable relationships must agree with those of the original circuit under the recorded transformations.
+
+10. Verify that the noise model and decoder transform consistently. Under uniform physical noise, the transported experiment must have the same noise-channel structure after relabeling. Check that the decoder and the definition of logical failure do not introduce a preferred labeling.
+
+11. Simulate $C_e$ and $\sigma(C_e)$ under the same uniform noise model. Report the logical error rates per round, raw failure counts, and Wilson 95% confidence intervals. Also report a confidence interval for their difference. Choose and record an equivalence tolerance before inspecting the results; overlapping individual confidence intervals alone are not sufficient to establish equivalence.
+
+12. Independently compile a circuit $C_{e'}$ for dropout ${e'}$, using the same nominal solver seed, time limit, and settings. Simulate this circuit and compare its LER against the transported circuit. Do not assume the identical seed produces symmetry-related schedules, since solver variable ordering and finite-time search may differ.
+
+**As a separate sanity check**: simulate the transported circuit using nonuniform, layout-dependent per-edge noise. Each circuit must use the noise assigned to its own physical edges. No equality of logical error rates is expected unless the physical noise assignment also respects the symmetry.
+
+**Output**:
+
+1. The tested permutations, corresponding orbit representatives, and representative-to-member maps.
+
+2. Original, transported, and independently compiled Stim circuits.
+
+3. Results of the connectivity, detector, and logical-observable checks.
+
+4. LER $(C_e)$, LER $(\sigma(C_e))$, and LER $(C_{e'})$, with raw failure counts and confidence intervals.
+
+5. Differences between the three measured error rates, with uncertainty estimates.
+
+6. Solver settings, circuit depths, and runtimes.
+
+7. A list of accepted and rejected circuit-transport symmetries.
+
+8. Decision rules.
+
+**Transport passes**: If the structural checks pass and the logical-performance difference is statistically consistent with the prespecified equivalence tolerance, permit representative-based circuit reuse for the tested experiment and symmetry. A statistically inconclusive comparison is not a pass.
+
+**Transport fails**: If the circuit is invalid, the logical observables do not transform correctly, or the decoder/noise implementation breaks the claimed equivalence, reject that transformation for representative-based reuse until the failure is understood.
+
+**Independent compilations differ**: Differences between $C_{e'}$ and $\sigma(C_e)$ do not automatically invalidate circuit transport. They instead demonstrate sensitivity to the compilation or schedule-selection policy and must be investigated in T3.
+
+**Layout-dependent noise**: Transported circuits may still be reused as valid circuits under different edge-dependent noise assignments, but their LERs must be simulated separately. Circuit reuse does not imply equal performance or optimality under those assignments. This gets back to the point we identified earlier in the section where we discussed the two conditions we wanted to test: circuit transport vs. independent compilation equivalences. 
+
+Permit one compilation per orbit per seed only for transformations satisfying the required structural and experiment-level checks. The heat map must use the same method for choosing a circuit at every dropout location. For example, if we select the best-performing circuit from 10 solver seeds for one representative coupler, we must use that same selection rule for every other representative. Otherwise, differences in logical error rates could reflect how circuits were selected rather than the actual effects of the dropouts.
+T3. Solver-variance decomposition (BB and surface code)
+
+Question. To what extent does the observed variation in single-coupler dropout heat maps reflect the physical location of the dropout, rather than ACID's choice of contraction schedule or finite-sample simulation noise?
+
+Gates. Whether heat maps produced from single solver runs contain meaningful spatial information, and whether multiple seeds or an anchored compilation policy are required before assigning logical-sensitivity weights to hardware connections.
+
+Motivation. A single dropout location can admit multiple valid syndrome-extraction schedules. ACID optimizes circuit scheduling using a heuristic objective rather than directly minimizing logical error rate. Consequently, different solver seeds may return circuits with different logical performance, even when the code, connectivity, and dropout pattern are unchanged.
+
+For couplers related by a verified experiment symmetry, the underlying physical experiment is equivalent under consistent circuit transport. Nevertheless, independently compiled schedules may exhibit different logical error rates.
+
+Thus, the variation in an observed heat map should be decomposed into:
+
+Simulation uncertainty: Statistical variation from the finite number of sampled logical failures.
+
+Solver-seed variation: Different schedules obtained for the same dropout location.
+
+Within-orbit variation: Differences between independently compiled circuits for dropout locations related by verified experiment symmetries.
+
+Between-orbit variation: Differences between coupler classes not related by the verified symmetry group.
+
+The last component is the principal candidate for symmetry-resolved logical-sensitivity information, but must be large enough relative to the other sources of uncertainty to be useful.
+
+Procedure A: Bivariate bicycle codes
+
+Use BB-144 with the degree-6 hexagonal connectivity. Repeat on the degree-5 connectivity if permitted by the T4 runtime budget.
+
+From T1, select:
+
+One representative coupler from each verified coupler orbit of $\Gamma_{\mathrm{exp}}$.
+
+Three additional members of the largest nontrivial coupler orbit.
+
+If T2 rejects representative-based transport for a candidate symmetry, retain the candidate orbit labels for exploratory comparison but do not assume equivalent performance.
+
+For each selected coupler, compile $K=10$ independent ACID schedules by varying random_seed, holding num_workers = 1 and the solver time limit fixed. Use the same set of ten nominal seed values across all locations for reproducibility. Record the solver status and circuit depth for every run.
+
+Simulate every generated circuit using the shared uniform reproduction noise model. Target at least 200 logical failures per circuit; if this cannot be reached within the allocated budget, report the attained failure count and confidence interval. Flag estimates with fewer than 100 failures.
+
+Include a dropout-free reference. Use the multi-seed dropout-free results of T5 when available, rather than selecting an arbitrary single-solve baseline.
+
+For symmetry-related locations, compare both:
+
+Independently compiled circuits at each location.
+
+Circuits transported from the common orbit representative using the T2 procedure.
+
+The transported comparison acts as a control for determining whether observed within-orbit differences originate from independent scheduling rather than physical inequivalence.
+
+Procedure B: Surface code
+
+Use the distance-11 surface code on the square-grid connectivity.
+
+Select 12 couplers in total:
+
+Four symmetry-related pairs (eight couplers). Include pairs related by 180° rotation and, where valid, transformations involving 90° rotation and global $X\leftrightarrow Z$ exchange.
+
+Four additional couplers at graded distances from the X and Z boundaries, to probe genuine boundary-dependent effects.
+
+For transformations exchanging X and Z, verify whether they preserve the chosen memory experiment or instead relate an X-memory experiment to a Z-memory experiment. Do not combine the latter measurements without recording and accounting for the change of logical basis.
+
+Compile $K=10$ independently seeded circuits per selected coupler, using the same settings as Procedure A.
+
+Simulate each circuit to the same statistical target as in Procedure A.
+
+Compile and simulate the dropout-free surface-code instance with $K=10$ seeds.
+
+Analysis
+
+Report the LER per round for every circuit, including its raw failure count and Wilson 95% confidence interval.
+
+Estimate the variation in log(LER) using a nested model with:
+
+Solver seed within dropout location.
+
+Dropout location within verified orbit or symmetry class.
+
+Variation between orbit or location classes.
+
+Separate finite-shot Monte Carlo uncertainty from solver-induced variation. Use an appropriate binomial-error model or explicitly documented regularization when constructing log(LER) estimates, so that zero observed failures do not produce undefined values.
+
+Report estimated variance components, their relative contributions, and bootstrap confidence intervals. Compare full distributions and quantiles rather than relying only on means.
+
+Compare the magnitude of between-orbit differences against both solver-seed variance and simulation uncertainty. Report the uncertainty in the estimated difference between orbit-level LERs.
+
+For symmetry-related couplers, compare independently compiled results against the circuit-transport controls from T2. A reproducible difference between independently compiled schedules does not, by itself, demonstrate intrinsic location dependence.
+
+For the surface code, determine whether systematic differences among inequivalent locations survive seed averaging. Interpret these differences relative to boundary geometry and the chosen scheduling policy.
+
+Output.
+
+Per-location and per-seed LER data, with confidence intervals and failure counts.
+
+Solver objective/status, circuit depths, and selected schedules.
+
+Within-location, within-orbit, and between-orbit variance estimates.
+
+Bootstrap uncertainty estimates for the variance components.
+
+Comparisons between independently compiled and transported circuits.
+
+Distributions of logical-sensitivity penalties relative to the dropout-free baseline.
+
+Decision rules.
+
+Small seed variance and meaningful between-orbit differences: Representative-based heat maps are suitable for assigning orbit-level logical-sensitivity weights, provided T2 has validated the relevant symmetry transport.
+
+Seed variance comparable to or larger than between-orbit variation: A heat map from single ACID solves is not reliable for assigning relative importance to individual couplers. Run T3b before using it in HAL.
+
+Within-orbit differences disappear under circuit transport: Treat differences between independent solves as effects of schedule selection, not physical location dependence.
+
+Between-orbit differences are unresolved: Flag insufficient single-coupler weighting resolution. Consider the asymmetric T7 testbed or explicitly justify another source of layout improvement.
+
+Surface-code boundary effects: Differences that persist after seed averaging are reproducible under the tested compilation policy, but must not automatically be attributed entirely to physical location if independently selected schedules remain a confounding factor.
+
+Once the compilation policy and baseline are finalized, define the heat-map entry using a consistent multi-seed summary (the median over $K$ seeds by default) and the pinned dropout-free reference determined in T5. Preserve negative dropout penalties rather than clipping them.
+
+Cost. T3 is expected to dominate the compilation and simulation budget. Use the measured runtime distribution from T4 and the decoding throughput from T9 to estimate its total cost before execution.
+
+T3b. Variance reduction by anchoring (solver hints)
+
+Question. Can warm-starting ACID from a fixed dropout-free reference schedule reduce solver-seed variance without worsening average logical error rate?
+
+Gates. Whether warm-started scheduling should become the MVP default, and whether the Anker–Debroy objective port in T10 is needed on the MVP critical path.
+
+Basis. Anker–Debroy use CP-SAT hints based on a canonical LUCI schedule to improve optimization stability and performance [V, arXiv:2512.10871 §IV C]. The effectiveness of the same approach inside ACID must be measured independently.
+
+Procedure.
+
+Select a fixed dropout-free reference schedule for each test instance. Record its contraction assignments, depth, solver configuration, and logical performance.
+
+For every dropout location sampled in T3, identify assignments from the reference schedule that remain valid following the dropout. Use these assignments as CP-SAT hints. Record which hints are retained or discarded.
+
+Run $K=10$ independent solver seeds for each dropout pattern with hints enabled, using the same time limits and noise model as the unhinted T3 experiments.
+
+Compare the hinted and unhinted schedules using:
+
+Mean and variance of log(LER).
+
+Median LER and relevant quantiles.
+
+Final circuit depth and solver status.
+
+Time to first feasible solution and final solution quality.
+
+Repeat using the lowest-LER dropout-free reference found in T5 as an alternative anchoring schedule.
+
+Check whether the hints produce a feasible incumbent and whether they alter the final schedules. Supplying partial CP-SAT hints does not by itself guarantee an improved circuit or LER.
+
+Output. Per-coupler distributions of logical error rate, variance, circuit depth, and solver runtime for hinted and unhinted compilation.
+
+Decision rules.
+
+If hinting reduces solver-seed variance by at least 50% without a statistically supported degradation in mean LER, adopt it as the default MVP compilation policy.
+
+If hinting succeeds, leave the Anker–Debroy objective port (T10) off the MVP critical path.
+
+If hinting fails to sufficiently reduce variance, retain the unhinted results, record the failure mode, and assess whether T10 or increased seed averaging is required before constructing the HAL sensitivity weights.
+<!--## T3. Solver-variance decomposition (BB and surface code)
 
 **Question.** Is the within-bulk spread seen in ACID heat maps real location dependence, or solver variance?
 
@@ -189,7 +402,7 @@ Use T3 to assess whether between-orbit differences are large enough, relative to
 **Decision rule.** If hinting at least halves the seed variance at no worse mean LER:
 - adopt hinting as the MVP default;
 - the Anker–Debroy objective port (T10) leaves the MVP critical path.
-
+-->
 ---
 
 ## T4. ACID runtime profile
