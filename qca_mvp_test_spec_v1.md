@@ -1,4 +1,4 @@
-# QCA theory MVP: test specification v2.2
+# QCA theory MVP: test specification v2.3:
 
 27 September 2026. Companion to: `defect_conditioned_code_selection_v1511.pdf` (v15), `acid_prophunt_hal_standing_connections_v1_annotated_review1.pdf`, `working_context_v4.1_addendum.md`, and the "Update Context" MVP note.
 
@@ -358,115 +358,66 @@ For symmetry-related couplers, compare independently compiled results against th
 ---
 ## T4. ACID runtime profile
 
-Question. What are the measured compilation costs of ACID across the proposed BB-code instances and dropout patterns, and how much computation will be required for T2, T3, T5, and the eventual sensitivity heat maps?
+**Question**: What are the measured compilation costs of ACID across the proposed BB-code instances and dropout patterns, and how much computation will be required for T2, T3, T5, and the eventual sensitivity heat maps?
 
-Gates. The practical compilation budget, number of feasible independent solver runs, and viability of the orbit-representative strategy.
+**Gates**: The practical compilation budget, number of feasible independent solver runs, and viability of the orbit-representative strategy.
 
-Procedure.
+**Procedure:**
+1. Profile the following ACID configurations:
+- BB-144, degree-6 hexagonal connectivity.
+- BB-144, degree-5 connectivity.
+- BB-288, degree-6 hexagonal connectivity.
+2. For each configuration, test the Cartesian product of:
+- Coupler dropout count: $n_e\in{0,1,2,3}$.
+- Qubit dropout count: $n_q\in{0,1}$.
+3. Generate five distinct random dropout patterns for each nonzero dropout-count combination. Use one dropout-free baseline per instance. Sample patterns with a recorded random seed, and avoid counting a coupler incident to an already dropped qubit as an additional independent dropout.
+4. Use the repository's native graph and code constructors, enforcing the graph-construction checks in Section 0 before profiling.
+5. For every configuration and sampled pattern, record:
+- Shape-cache construction time.
+- Scheduling/model construction time.
+- Time to first feasible solution.
+- Time to best solution found.
+- Time to proven optimum, if applicable.
+- Total wall-clock compilation time.
+- Final contraction-layer count $L$.
+- Solver status and termination reason.
+- Peak memory usage.
+6. Record the solver configuration for every run:
+- OR-Tools version.
+- num_workers.
+- random_seed.
+- Time limit.
+- Whether "hints" were supplied.
+- Any relevant ACID configuration or objective settings.
+7. Profile the standard single-worker setting used for controlled seed comparisons. Include one multi-worker run per configuration to identify the effect of solver parallelism. Do not interpret multi-worker runs as independent single-worker seeds.
+8. Distinguish cold-start and warm-cache timings. If shape information is reused across patterns, report the cost of constructing it separately from the incremental cost of each additional solve.
+9. Record the machine specifications, including CPU, core count, RAM, software versions, and whether runs were executed under shared computational load.
 
-Profile the following ACID configurations:
+**Analysis**:
+1. Group compilation times by code instance, connectivity type, coupler dropout count, and qubit dropout count.
+2. Report the median, 90th percentile, maximum, and observed timeout rate for each configuration.
+3. Separate the costs of graph and shape preprocessing, solver model construction, and optimization.
+4. Identify how runtime changes with increasing numbers of defective components. Distinguish longer optimization times from failures to find a feasible schedule.
+5. Use the observed runtime distributions to estimate the compilation cost of:
+- T2 circuit-transport validation.
+- T3 multi-seed variance experiments.
+- T5 dropout-free baseline studies.
+- Full single-coupler heat maps, with and without verified orbit-based circuit reuse.
+6. Report compilation costs separately from logical-error simulation costs. The latter will be combined with the BP-AC decoding throughput measured for T9.
 
-BB-144, degree-6 hexagonal connectivity.
+**Output**:
+1. Raw per-solve timing and solver-configuration data.
+2. Runtime distributions by code instance and dropout configuration.
+3. Cold-cache versus warm-cache overhead.
+4. Solver success, timeout, and depth statistics.
+5. Estimated CPU-hours for the principal MVP experiments.
+6. Projected compilation savings from the verified orbit-representative strategy.
 
-BB-144, degree-5 connectivity.
-
-BB-288, degree-6 hexagonal connectivity.
-
-For each configuration, test the Cartesian product of:
-
-Coupler dropout count: $n_e\in{0,1,2,3}$.
-
-Qubit dropout count: $n_q\in{0,1}$.
-
-Generate five distinct random dropout patterns for each nonzero dropout-count combination. Use one dropout-free baseline per instance. Sample patterns with a recorded random seed, and avoid counting a coupler incident to an already dropped qubit as an additional independent dropout.
-
-Use the repository's native graph and code constructors, enforcing the graph-construction checks in Section 0 before profiling.
-
-For every configuration and sampled pattern, record:
-
-Shape-cache construction time.
-
-Scheduling/model construction time.
-
-Time to first feasible solution.
-
-Time to best solution found.
-
-Time to proven optimum, if applicable.
-
-Total wall-clock compilation time.
-
-Final contraction-layer count $L$.
-
-Solver status and termination reason.
-
-Peak memory usage.
-
-Record the solver configuration for every run:
-
-OR-Tools version.
-
-num_workers.
-
-random_seed.
-
-Time limit.
-
-Whether hints were supplied.
-
-Any relevant ACID configuration or objective settings.
-
-Profile the standard single-worker setting used for controlled seed comparisons. Include one multi-worker run per configuration to identify the effect of solver parallelism. Do not interpret multi-worker runs as independent single-worker seeds.
-
-Distinguish cold-start and warm-cache timings. If shape information is reused across patterns, report the cost of constructing it separately from the incremental cost of each additional solve.
-
-Record the machine specifications, including CPU, core count, RAM, software versions, and whether runs were executed under shared computational load.
-
-Analysis
-
-Group compilation times by code instance, connectivity type, coupler dropout count, and qubit dropout count.
-
-Report the median, 90th percentile, maximum, and observed timeout rate for each configuration.
-
-Separate the costs of graph and shape preprocessing, solver model construction, and optimization.
-
-Identify how runtime changes with increasing numbers of defective components. Distinguish longer optimization times from failures to find a feasible schedule.
-
-Use the observed runtime distributions to estimate the compilation cost of:
-
-T2 circuit-transport validation.
-
-T3 multi-seed variance experiments.
-
-T5 dropout-free baseline studies.
-
-Full single-coupler heat maps, with and without verified orbit-based circuit reuse.
-
-Report compilation costs separately from logical-error simulation costs. The latter will be combined with the BP-AC decoding throughput measured for T9.
-
-Output.
-
-Raw per-solve timing and solver-configuration data.
-
-Runtime distributions by code instance and dropout configuration.
-
-Cold-cache versus warm-cache overhead.
-
-Solver success, timeout, and depth statistics.
-
-Estimated CPU-hours for the principal MVP experiments.
-
-Projected compilation savings from the verified orbit-representative strategy.
-
-Decision rules.
-
-Use the measured runtime distributions, rather than the runtime of a single representative solve, to establish the computational budget for T3 and the complete heat maps.
-
-Compare projected costs against the "hours per heat map" estimate in the Update Context MVP note.
-
-If the projected cost exceeds the available budget, report which component dominates and how much representative-based reuse or reduced solver variance would save. Do not silently reduce the prescribed sample sizes.
-
-Use the results to determine whether the BB-288 instance is practical for the full MVP study or should be limited to validation experiments.
+**Decision rules**:
+1. Use the measured runtime distributions, rather than the runtime of a single representative solve, to establish the computational budget for T3 and the complete heat maps.
+2. Compare projected costs against the "hours per heat map" estimate in the Update Context MVP note.
+3. If the projected cost exceeds the available budget, report which component dominates and how much representative-based reuse or reduced solver variance would save. Do not silently reduce the prescribed sample sizes.
+4. Use the results to determine whether the BB-288 instance is practical for the full MVP study or should be limited to validation experiments.
 <!--
 ## T4. ACID runtime profile
 
